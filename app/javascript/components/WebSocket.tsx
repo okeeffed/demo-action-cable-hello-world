@@ -1,29 +1,66 @@
 import * as React from "react";
 import * as ReactDOM from "react-dom";
 import { BrowserRouter, Routes, Route, useParams } from "react-router-dom";
+import { useAppSelector, useAppDispatch } from "../store/hooks";
+import {
+  addMessageToChannel,
+  addChannel,
+  selectMessagesById,
+  removeChannel,
+} from "../store/channels";
 import consumer from "../channels/consumer";
+import { store } from "../store/store";
+import { Provider } from "react-redux";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 function WebSocket() {
-  const [messages, setMessages] = React.useState([]);
   const params = useParams();
+  const messages = useAppSelector((state) =>
+    selectMessagesById(state, params.room_id)
+  );
+  const dispatch = useAppDispatch();
+  const roomId = params.room_id ?? "root";
 
   React.useEffect(() => {
-    consumer.subscriptions.create(
-      { channel: "RoomChannel", room_id: params.room_id ?? undefined },
+    const subscription = consumer.subscriptions.create(
+      { channel: "RoomChannel", room_id: roomId },
       {
-        received(data) {
-          setMessages([...messages, data.message]);
+        received({ message }) {
+          console.log(message);
+          switch (message.type) {
+            case "ADD_MESSAGE_TO_CHANNEL":
+              dispatch(
+                addMessageToChannel({ id: roomId, message: message.payload })
+              );
+              break;
+            case "DISPLAY_NOTIFICATION":
+              toast(message.payload);
+              break;
+            default:
+              break;
+          }
         },
       }
     );
-  }, [messages, setMessages, params]);
+
+    dispatch(addChannel({ id: roomId }));
+
+    return () => {
+      subscription.unsubscribe();
+      dispatch(removeChannel({ id: roomId }));
+    };
+  }, []);
 
   return (
-    <div>
-      {messages.map((message: string, index: number) => (
-        <p key={`message-${index}`}>{message}</p>
-      ))}
-    </div>
+    <>
+      <div>
+        {messages.map((message: string, index: number) => (
+          <p key={`message-${index}`}>{message}</p>
+        ))}
+      </div>
+      <ToastContainer />
+    </>
   );
 }
 
@@ -34,14 +71,16 @@ function NotFound() {
 document.addEventListener("DOMContentLoaded", () => {
   const rootEl = document.getElementById("root");
   ReactDOM.render(
-    <BrowserRouter>
-      <Routes>
-        <Route path="rooms" element={<WebSocket />}>
-          <Route path=":room_id" element={<WebSocket />} />
-        </Route>
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </BrowserRouter>,
+    <Provider store={store}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="rooms" element={<WebSocket />}>
+            <Route path=":room_id" element={<WebSocket />} />
+          </Route>
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </BrowserRouter>
+    </Provider>,
     rootEl
   );
 });
